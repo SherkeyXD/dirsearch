@@ -22,7 +22,75 @@ from __future__ import annotations
 import subprocess
 import sys
 from importlib.metadata import version, PackageNotFoundError
-from packaging.requirements import Requirement
+
+# Try to import packaging, fallback to a simple implementation if not available
+try:
+    from packaging.requirements import Requirement
+    HAS_PACKAGING = True
+except ImportError:
+    HAS_PACKAGING = False
+    
+    # Simple fallback implementation for basic requirement parsing
+    class Requirement:
+        def __init__(self, requirement_string):
+            self.requirement_string = requirement_string.strip()
+            # Simple parsing: package_name[>=version]
+            if '>=' in self.requirement_string:
+                parts = self.requirement_string.split('>=')
+                self.name = parts[0].strip()
+                self.min_version = parts[1].strip() if len(parts) > 1 else None
+                self.specifier = SimpleSpecifierSet(f">={self.min_version}" if self.min_version else "")
+            elif '==' in self.requirement_string:
+                parts = self.requirement_string.split('==')
+                self.name = parts[0].strip()
+                self.exact_version = parts[1].strip() if len(parts) > 1 else None
+                self.specifier = SimpleSpecifierSet(f"=={self.exact_version}" if self.exact_version else "")
+            else:
+                self.name = self.requirement_string
+                self.specifier = SimpleSpecifierSet("")
+        
+        def __str__(self):
+            return self.requirement_string
+    
+    class SimpleSpecifierSet:
+        def __init__(self, spec):
+            self.spec = spec
+        
+        def contains(self, version_string):
+            if not self.spec:
+                return True
+            
+            if self.spec.startswith('>='):
+                required_version = self.spec[2:]
+                return self._compare_versions(version_string, required_version) >= 0
+            elif self.spec.startswith('=='):
+                required_version = self.spec[2:]
+                return version_string == required_version
+            else:
+                return True
+        
+        def _compare_versions(self, v1, v2):
+            """Simple version comparison"""
+            try:
+                v1_parts = [int(x) for x in v1.split('.')]
+                v2_parts = [int(x) for x in v2.split('.')]
+                
+                # Pad shorter version with zeros
+                max_len = max(len(v1_parts), len(v2_parts))
+                v1_parts += [0] * (max_len - len(v1_parts))
+                v2_parts += [0] * (max_len - len(v2_parts))
+                
+                if v1_parts < v2_parts:
+                    return -1
+                elif v1_parts > v2_parts:
+                    return 1
+                else:
+                    return 0
+            except (ValueError, AttributeError):
+                return 0  # If parsing fails, assume they're equal
+        
+        def __str__(self):
+            return self.spec
 
 from lib.core.exceptions import FailedDependenciesInstallation
 from lib.core.settings import SCRIPT_PATH
