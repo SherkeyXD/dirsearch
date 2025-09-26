@@ -33,12 +33,89 @@ REQUIREMENTS_FILE = f"{SCRIPT_PATH}/requirements.txt"
 
 class DistributionNotFound(Exception):
     """Exception raised when a distribution is not found."""
-    pass
+    
+    def __init__(self, requirement=None):
+        if requirement is None:
+            self.requirement = None
+            self.args = ()
+        elif isinstance(requirement, str):
+            # Handle string input (package name or error message)
+            self.requirement = requirement
+            self.args = (requirement,)
+            super().__init__(requirement)
+        else:
+            # Handle Requirement object
+            self.requirement = requirement
+            self.args = (requirement,)
+            super().__init__(f"The '{requirement.name}' distribution was not found")
+    
+    def __str__(self):
+        if isinstance(self.requirement, str):
+            return self.requirement
+        elif self.requirement is not None:
+            return f"The '{self.requirement.name}' distribution was not found"
+        else:
+            return "Distribution not found"
 
 
 class VersionConflict(Exception):
     """Exception raised when there's a version conflict."""
-    pass
+    
+    def __init__(self, dist=None, requirement=None):
+        self.dist = dist
+        self.requirement = requirement
+        
+        if isinstance(dist, str) and requirement is None:
+            # Handle simple string message
+            message = dist
+        else:
+            # Extract project name and version information
+            if dist is not None:
+                if hasattr(dist, 'project_name'):
+                    project_name = getattr(dist, 'project_name')
+                    installed_version = getattr(dist, 'version', 'unknown')
+                elif isinstance(dist, str):
+                    # Parse string format "package_name version" or just use as project name
+                    parts = dist.split()
+                    if len(parts) >= 2:
+                        project_name = parts[0]
+                        installed_version = parts[1]
+                    else:
+                        project_name = dist
+                        installed_version = "unknown"
+                else:
+                    project_name = str(dist)
+                    installed_version = "unknown"
+            else:
+                project_name = "unknown"
+                installed_version = "unknown"
+            
+            # Format the requirement information
+            if requirement is not None:
+                if hasattr(requirement, 'name'):
+                    req_name = requirement.name
+                    req_spec = str(requirement.specifier) if hasattr(requirement, 'specifier') else ''
+                elif hasattr(requirement, 'project_name'):
+                    req_name = getattr(requirement, 'project_name')
+                    req_spec = str(requirement.specifier) if hasattr(requirement, 'specifier') else str(requirement)
+                else:
+                    req_name = str(requirement)
+                    req_spec = ''
+                
+                message = f"{project_name} {installed_version} is installed but {req_name}{req_spec} is required"
+            else:
+                message = f"Version conflict: {project_name} {installed_version}"
+        
+        self.args = (message,)
+        super().__init__(message)
+    
+    def __str__(self):
+        return self.args[0] if self.args else "Version conflict"
+    
+    @property
+    def report(self):
+        """Generate a detailed report of the version conflict."""
+        return str(self)
 
 
 def get_dependencies() -> list[str]:
@@ -53,16 +130,28 @@ def get_dependencies() -> list[str]:
 def check_dependencies() -> None:
     dependencies = get_dependencies()
     for dependency in dependencies:
+        dependency = dependency.strip()
+        if not dependency or dependency.startswith('#'):
+            # Skip empty lines and comments
+            continue
+            
         try:
-            requirement = Requirement(dependency.strip())
+            requirement = Requirement(dependency)
             # Check if the package is installed
             try:
                 installed_version = version(requirement.name)
                 # Check if the installed version satisfies the requirement
-                if not requirement.specifier.contains(installed_version):
-                    raise VersionConflict(f"{requirement.name} version {installed_version} does not satisfy {requirement}")
+                if requirement.specifier and not requirement.specifier.contains(installed_version):
+                    # Create a mock distribution object for better error reporting
+                    class MockDist:
+                        def __init__(self, name, version):
+                            self.project_name = name
+                            self.version = version
+                    
+                    mock_dist = MockDist(requirement.name, installed_version)
+                    raise VersionConflict(mock_dist, requirement)
             except PackageNotFoundError:
-                raise DistributionNotFound(f"Package {requirement.name} is not installed")
+                raise DistributionNotFound(requirement)
         except Exception as e:
             # Handle any other parsing errors
             if not isinstance(e, (DistributionNotFound, VersionConflict)):
