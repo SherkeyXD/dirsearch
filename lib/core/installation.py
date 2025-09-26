@@ -21,13 +21,24 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import pkg_resources
+from importlib.metadata import version, PackageNotFoundError
+from packaging.requirements import Requirement
 
 from lib.core.exceptions import FailedDependenciesInstallation
 from lib.core.settings import SCRIPT_PATH
 from lib.utils.file import FileUtils
 
 REQUIREMENTS_FILE = f"{SCRIPT_PATH}/requirements.txt"
+
+
+class DistributionNotFound(Exception):
+    """Exception raised when a distribution is not found."""
+    pass
+
+
+class VersionConflict(Exception):
+    """Exception raised when there's a version conflict."""
+    pass
 
 
 def get_dependencies() -> list[str]:
@@ -40,7 +51,22 @@ def get_dependencies() -> list[str]:
 
 # Check if all dependencies are satisfied
 def check_dependencies() -> None:
-    pkg_resources.require(get_dependencies())
+    dependencies = get_dependencies()
+    for dependency in dependencies:
+        try:
+            requirement = Requirement(dependency.strip())
+            # Check if the package is installed
+            try:
+                installed_version = version(requirement.name)
+                # Check if the installed version satisfies the requirement
+                if not requirement.specifier.contains(installed_version):
+                    raise VersionConflict(f"{requirement.name} version {installed_version} does not satisfy {requirement}")
+            except PackageNotFoundError:
+                raise DistributionNotFound(f"Package {requirement.name} is not installed")
+        except Exception as e:
+            # Handle any other parsing errors
+            if not isinstance(e, (DistributionNotFound, VersionConflict)):
+                raise DistributionNotFound(str(e))
 
 
 def install_dependencies() -> None:

@@ -19,7 +19,6 @@
 #  Author: Mauro Soria
 
 import sys
-import warnings
 
 from lib.core.data import options
 from lib.core.exceptions import FailedDependenciesInstallation
@@ -31,9 +30,8 @@ if sys.version_info < (3, 9):
     sys.stderr.write("Sorry, dirsearch requires Python 3.9 or higher\n")
     sys.exit(1)
 
-# silence pkg_resources deprecation warnings
-warnings.simplefilter("ignore", DeprecationWarning)
-from pkg_resources import DistributionNotFound, VersionConflict  # noqa: E402
+# No need to silence pkg_resources warnings anymore since we're using importlib.metadata
+from lib.core.installation import DistributionNotFound, VersionConflict  # noqa: E402
 
 
 def main():
